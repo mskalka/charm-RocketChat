@@ -1,12 +1,10 @@
 name: rocketchat
-summary: <Fill in summary here>
+summary: Rocket.Chat for your cloud!
 maintainer: Michael Skalka <MichaelSkalka@gmail.com>
 description: |
-  <Multi-line description here>
+  Quickly deploy Rocket.Chat to your cloud. Requires a running MongoDB instance.
 tags:
-  # Replace "misc" with one or more whitelisted tags from this list:
-  # https://jujucharms.com/docs/stable/authors-charm-metadata
-  - misc
+  - social
 series:
   - xenial
 subordinate: false

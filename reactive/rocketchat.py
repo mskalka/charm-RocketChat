@@ -40,12 +40,13 @@ def install_deps():
     handler.install('https://rocket.chat/releases/latest/download',
                     dest=charm_path)
 
-    # Pull Rock.Chat out and install it
+    # Unpack Rocket.Chat to destination folder
     subprocess.run(['mv', charm_path + '/bundle/',
                     charm_path + '/Rocket.Chat'])
     os.chdir(charm_path + '/Rocket.Chat/programs/server')
     subprocess.run(['sudo', 'npm', 'install'])
-
+    # Ensure .bashrc exists
+    subprocess.run('touch ~/.bashrc', shell=True)
     status_set('maintenance', 'packages installed')
     set_state('rocketchat.deps_installed')
 
@@ -53,21 +54,18 @@ def install_deps():
 @when('rocketchat.deps_installed', 'database.connected')
 @when_not('rocketchat.launched')
 def launch_rocketchat(database):
-    # Set environmental vars
+    # Set Environmental Variables
     set_env_vars(database)
-
     # Run Rocket.Chat
-    subprocess.run(['sudo', 'node',
-                    charm_path + '/Rocket.Chat/main.js'])
-    status_set('active',
-               'Rocket.Chat Launched at {}'.format(config['host_url']))
+    subprocess.run('sudo node ' + charm_path + '/Rocket.Chat/main.js',
+                   shell=True)
     log('Launched Rocket.Chat @ {}'.format(config['host_url']), level='info')
     set_state('rocketchat.launched')
 
 
 @when('rocketchat.launched', 'database.connected')
 def running(database):
-    status_set('active', 'Rocket.Chat ready')
+    status_set('active', 'Rocket.Chat ready at {}'.format(config['host_url']))
 
 
 @when('rocketchat.deps_installed', 'rocketchat.launched', 'database.removed')
@@ -86,7 +84,8 @@ def reconfigure_rc(database):
 def set_env_vars(database):
     mongo_url = database.hostname()
     mongo_port = database.port()
-    os.environ['ROOT_URL'] = config['host_url']
-    os.environ['MONGO_URL'] = 'mongodb://{}:{}/rocketchat'.format(mongo_url,
-                                                                  mongo_port)
-    os.environ['PORT'] = config['port']
+    with open("~/.bashrc", "a") as outfile:
+        outfile.write('export ROOT_URL={}'.format(config['host_url']))
+        outfile.write('export MONGO_URL=mongodb://{}:{}/rocketchat'.format(mongo_url,
+                                                                           mongo_port))
+        outfile.write('export PORT={}'.format(config['port']))
