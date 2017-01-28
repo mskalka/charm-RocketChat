@@ -1,0 +1,10 @@
+options:
+  host_url:
+    type: string
+    default: http://localhost/
+    description: |
+      Public URL of your Rocket.Chat server as http://your-host.com/
+  port:
+    type: string
+    default: '3000'
+    description: Rocket.Chat server port

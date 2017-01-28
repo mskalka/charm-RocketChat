@@ -1,0 +1,18 @@
+name: rocketchat
+summary: <Fill in summary here>
+maintainer: Michael Skalka <MichaelSkalka@gmail.com>
+description: |
+  <Multi-line description here>
+tags:
+  # Replace "misc" with one or more whitelisted tags from this list:
+  # https://jujucharms.com/docs/stable/authors-charm-metadata
+  - misc
+series:
+  - xenial
+subordinate: false
+requires:
+  database:
+    interface: mongodb
+provides:
+  chatserver:
+    interface: http
