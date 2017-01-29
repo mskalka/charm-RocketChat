@@ -1,5 +1,6 @@
 import subprocess
 import os
+from shutil import copyfile
 
 from charmhelpers.core import hookenv
 from charmhelpers.core.hookenv import (
@@ -7,6 +8,10 @@ from charmhelpers.core.hookenv import (
     log,
     config,
     charm_dir
+)
+from charmhelpers.core.host import (
+    service_start,
+    service_stop
 )
 from charmhelpers.fetch.archiveurl import ArchiveUrlFetchHandler
 from charmhelpers.fetch import apt_install
@@ -21,18 +26,16 @@ config = config()
 charm_path = charm_dir()
 
 
-@when_not('rocketchat.installed', 'rocketchat.deps_installed')
+@when_not('rocketchat.installed', 'rocketchat.ready')
 def install_deps():
     # Pull dependencies
     status_set('maintenance', 'fetching rocket.chat packages')
     log('fetching rocket.chat packages', level='info')
-    apt_install(['graphicsmagick',
-                 'curl',
-                 'npm',
-                 'build-essential'])
-    subprocess.run(['sudo', 'npm', 'install', '-g', 'n'])
-    subprocess.run(['sudo', 'n', '4.5'])
-
+    apt_install(['nodejs',
+                 'build-essential',
+                 'npm'])
+    # subprocess.run(['sudo', 'npm', 'install', '-g', 'n'])
+    # subprocess.run(['sudo', 'n', '4.5'])
     # Pull latest version of Rocket.Chat
     handler = ArchiveUrlFetchHandler()
     status_set('maintenance', 'fetching rocket.chat')
@@ -41,51 +44,53 @@ def install_deps():
                     dest=charm_path)
 
     # Unpack Rocket.Chat to destination folder
-    subprocess.run(['mv', charm_path + '/bundle/',
-                    charm_path + '/Rocket.Chat'])
-    os.chdir(charm_path + '/Rocket.Chat/programs/server')
+    subprocess.run(['mv', charm_path + '/bundle/', '/opt/Rocket.Chat'])
+    os.chdir('/opt/Rocket.Chat/programs/server')
     subprocess.run(['sudo', 'npm', 'install'])
-    # Ensure .bashrc exists
-    subprocess.run('touch ~/.bashrc', shell=True)
+    copyfile(charm_path + '/files/rocketchat.service',
+                          '/etc/systemd/system/rocketchat.service')
     status_set('maintenance', 'packages installed')
-    set_state('rocketchat.deps_installed')
+    set_state('rocketchat.ready')
 
 
-@when('rocketchat.deps_installed', 'database.connected')
+@when('rocketchat.ready', 'rocketchat.vars_set', 'database.connected')
 @when_not('rocketchat.launched')
 def launch_rocketchat(database):
-    # Set Environmental Variables
-    set_env_vars(database)
-    # Run Rocket.Chat
-    subprocess.run('sudo node ' + charm_path + '/Rocket.Chat/main.js',
-                   shell=True)
-    log('Launched Rocket.Chat @ {}'.format(config['host_url']), level='info')
+    status_set('active', 'Launching Rocket.Chat')
+    # Launch Rocket.Chat
+    hookenv.open_port('3000')
+    service_start('rocketchat')
+    log('Launched Rocket.Chat @ {}'.format(config['host_url']),
+        level='info')
     set_state('rocketchat.launched')
 
 
-@when('rocketchat.launched', 'database.connected')
-def running(database):
-    status_set('active', 'Rocket.Chat ready at {}'.format(config['host_url']))
+@when_not('rocketchat.launched', 'rocketchat.vars_set')
+@when('database.connected', 'rocketchat.ready')
+def set_rocketchat_config(database):
+    if database.connection_string() is not None:
+        with open('/etc/rocketchat', 'w') as f:
+            f.writelines(env_vars(database))
+        f.close()
+        set_state('rocketchat.vars_set')
+    else:
+        status_set('maintenance', 'Waiting for MongoDB connection')
 
 
-@when('rocketchat.deps_installed', 'rocketchat.launched', 'database.removed')
-def db_lost(database):
-    status_set('maintenance', 'database lost')
+@when('database.removed', 'rocketchat.launched')
+def reset_connection(database):
+    service_stop('rocketchat')
     remove_state('rocketchat.launched')
+    remove_state('rocketchat.vars_set')
+    status_set('blocked', 'Lost MongoDB connection')
 
 
-@when('config.changed', 'rocketchat.deps_installed', 'database.connected')
-def reconfigure_rc(database):
-    status_set('maintenance', 'updating configuration')
-    set_env_vars(database)
-    remove_state('rocketchat.launched')
-
-
-def set_env_vars(database):
-    mongo_url = database.hostname()
-    mongo_port = database.port()
-    with open("~/.bashrc", "a") as outfile:
-        outfile.write('export ROOT_URL={}'.format(config['host_url']))
-        outfile.write('export MONGO_URL=mongodb://{}:{}/rocketchat'.format(mongo_url,
-                                                                           mongo_port))
-        outfile.write('export PORT={}'.format(config['port']))
+def env_vars(database):
+    connection = database.connection_string()
+    log('MongoDB URL:{}'.format(connection))
+    out = []
+    out.append('PORT={}\n'.format(config['port']))
+    out.append('ROOT_URL={}\n'.format(config['host_url']))
+    out.append('MONGO_URL=mongodb://{}/rocketchat\n'.format(connection))
+    # out.append('MONGO_OPLOG_URL=mongodb://{}/local?replicaSet=myset\n'.format(connection))
+    return out

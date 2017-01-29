@@ -1,0 +1,10 @@
+[Unit]
+Description=Rocket.Chat
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/rocketchat
+ExecStart= /usr/bin/nodejs /opt/Rocket.Chat/main.js
+
+[Install]
+WantedBy=multi-user.target
